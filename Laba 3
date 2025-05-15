@@ -1,0 +1,333 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
+#include <time.h>
+#define CHANGE_ROUTE_PENALTY 3
+
+// A) Очередь через массив
+typedef struct {
+    int* items;
+    int front;
+    int rear;
+    int capacity;
+} QueueArray;
+
+QueueArray* createQueueArray(int capacity) {
+    QueueArray* q = (QueueArray*)malloc(sizeof(QueueArray));
+    q->items = (int*)malloc(capacity * sizeof(int));
+    q->front = 0;
+    q->rear = -1;
+    q->capacity = capacity;
+    return q;
+}
+
+int isEmptyArray(QueueArray* q) {
+    return q->rear < q->front;
+}
+
+void enqueueArray(QueueArray* q, int value) {
+    if (q->rear == q->capacity - 1) return;
+    q->items[++q->rear] = value;
+}
+
+int dequeueArray(QueueArray* q) {
+    if (isEmptyArray(q)) return -1; // Ошибка
+    return q->items[q->front++];
+}
+
+void freeQueueArray(QueueArray* q) {
+    free(q->items);
+    free(q);
+}
+
+// B) Очередь через связный список
+typedef struct Node {
+    int data;
+    struct Node* next;
+} Node;
+
+typedef struct {
+    Node* front;
+    Node* rear;
+} QueueList;
+
+QueueList* createQueueList() {
+    QueueList* q = (QueueList*)malloc(sizeof(QueueList));
+    q->front = q->rear = NULL;
+    return q;
+}
+
+int isEmptyList(QueueList* q) {
+    return q->front == NULL;
+}
+
+void enqueueList(QueueList* q, int value) {
+    Node* newNode = (Node*)malloc(sizeof(Node));
+    newNode->data = value;
+    newNode->next = NULL;
+
+    if (isEmptyList(q)) {
+        q->front = q->rear = newNode;
+    } else {
+        q->rear->next = newNode;
+        q->rear = newNode;
+    }
+}
+
+int dequeueList(QueueList* q) {
+    if (isEmptyList(q)) return -1; // Ошибка
+
+    Node* temp = q->front;
+    int data = temp->data;
+    q->front = q->front->next;
+
+    if (q->front == NULL) {
+        q->rear = NULL;
+    }
+
+    free(temp);
+    return data;
+}
+
+void freeQueueList(QueueList* q) {
+    while (!isEmptyList(q)) {
+        dequeueList(q);
+    }
+    free(q);
+}
+
+//C) Имитация очереди std
+typedef struct {
+    int* items;
+    int front;
+    int rear;
+    int capacity;
+} QueueStd;
+
+QueueStd* createQueueStd(int capacity) {
+    QueueStd* q = (QueueStd*)malloc(sizeof(QueueStd));
+    q->items = (int*)malloc(capacity * sizeof(int));
+    q->front = 0;
+    q->rear = -1;
+    q->capacity = capacity;
+    return q;
+}
+
+int isEmptyStd(QueueStd* q) {
+    return q->rear < q->front;
+}
+
+void enqueueStd(QueueStd* q, int value) {
+    if (q->rear == q->capacity - 1) return;
+    q->items[++q->rear] = value;
+}
+
+int dequeueStd(QueueStd* q) {
+    if (isEmptyStd(q)) return -1; // Ошибка
+    return q->items[q->front++];
+}
+
+void freeQueueStd(QueueStd* q) {
+    free(q->items);
+    free(q);
+}
+
+// Структура для хранения информации об остановке
+typedef struct {
+  int stop;
+  int route;
+  int dist;
+} BusStopInfo;
+
+// BFS
+int shortestPath(int start, int end, int numStops, int** routes, int* routeSizes, int numRoutes, int queueType) {
+
+    int* distances = (int*)malloc(numStops * sizeof(int));
+    int* previousStop = (int*)malloc(numStops * sizeof(int));
+    int* previousRoute = (int*)malloc(numStops * sizeof(int));
+
+    for (int i = 0; i < numStops; i++) {
+        distances[i] = INT_MAX;
+        previousStop[i] = -1;
+        previousRoute[i] = -1;
+    }
+
+    distances[start] = 0;
+
+    QueueArray* queueArray = NULL;
+    QueueList* queueList = NULL;
+    QueueStd* queueStd = NULL;
+
+    if (queueType == 1) {
+        queueArray = createQueueArray(numStops);
+    } else if (queueType == 2) {
+        queueList = createQueueList();
+    } else {
+        queueStd = createQueueStd(numStops);
+    }
+
+    BusStopInfo startInfo;
+    startInfo.stop = start;
+    startInfo.route = -1;
+    startInfo.dist = 0;
+
+
+    if (queueType == 1) {
+        enqueueArray(queueArray, start);
+    } else if (queueType == 2) {
+        enqueueList(queueList, start);
+    } else {
+        enqueueStd(queueStd, start);
+    }
+
+
+
+    while (1) {
+        int currentStop;
+
+        if (queueType == 1) {
+            if (isEmptyArray(queueArray)) break;
+            currentStop = dequeueArray(queueArray);
+        } else if (queueType == 2) {
+            if (isEmptyList(queueList)) break;
+            currentStop = dequeueList(queueList);
+        } else {
+             if (isEmptyStd(queueStd)) break;
+            currentStop = dequeueStd(queueStd);
+        }
+
+        if (currentStop == -1) break;
+
+        if (currentStop == end) break;
+
+        for (int i = 0; i < numRoutes; i++) {
+            int found = -1;
+            for (int j = 0; j < routeSizes[i]; j++) {
+                if (routes[i][j] == currentStop) {
+                    found = j;
+                    break;
+                }
+            }
+
+            if (found != -1) {
+                // Соседи:
+                if (found > 0) {
+                    int neighbor = routes[i][found - 1];
+                     int newDist = distances[currentStop] + 1;
+
+                    //Штраф за пересадку
+                     if(previousRoute[currentStop] != -1 && previousRoute[currentStop] != i){
+                        newDist += CHANGE_ROUTE_PENALTY;
+                    }
+
+
+                    if (distances[neighbor] > newDist ) {
+                        distances[neighbor] = newDist;
+                        previousStop[neighbor] = currentStop;
+                        previousRoute[neighbor] = i;
+
+                        if (queueType == 1) {
+                            enqueueArray(queueArray, neighbor);
+                        } else if (queueType == 2) {
+                            enqueueList(queueList, neighbor);
+                        } else {
+                            enqueueStd(queueStd, neighbor);
+                        }
+
+
+                    }
+                }
+                if (found < routeSizes[i] - 1) {
+                    int neighbor = routes[i][found + 1];
+                     int newDist = distances[currentStop] + 1;
+                    //Штраф за пересадку
+                     if(previousRoute[currentStop] != -1 && previousRoute[currentStop] != i){
+                        newDist += CHANGE_ROUTE_PENALTY;
+                    }
+
+                    if (distances[neighbor] > newDist) {
+                         distances[neighbor] = newDist;
+                         previousStop[neighbor] = currentStop;
+                         previousRoute[neighbor] = i;
+
+                        if (queueType == 1) {
+                            enqueueArray(queueArray, neighbor);
+                        } else if (queueType == 2) {
+                            enqueueList(queueList, neighbor);
+                        } else {
+                            enqueueStd(queueStd, neighbor);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    int result = distances[end];
+
+
+    if (queueType == 1) {
+        freeQueueArray(queueArray);
+    } else if (queueType == 2) {
+        freeQueueList(queueList);
+    } else {
+        freeQueueStd(queueStd);
+    }
+
+    free(distances);
+    free(previousStop);
+    free(previousRoute);
+
+
+    return result == INT_MAX ? -1 : result;
+}
+
+void comparePerformance(int start, int end, int numStops, int** routes, int* routeSizes, int numRoutes) {
+    clock_t start_t, end_t;
+    double total_t;
+    int distance;
+
+    printf("Сравнение производительности:\n");
+
+    // Очередь на массиве
+    start_t = clock();
+    distance = shortestPath(start, end, numStops, routes, routeSizes, numRoutes, 1);
+    end_t = clock();
+    total_t = (double)(end_t - start_t) / CLOCKS_PER_SEC;
+    printf("  Массив: время = %f сек, расстояние = %d\n", total_t, distance);
+
+    // Очередь на связном списке
+    start_t = clock();
+    distance = shortestPath(start, end, numStops, routes, routeSizes, numRoutes, 2);
+    end_t = clock();
+    total_t = (double)(end_t - start_t) / CLOCKS_PER_SEC;
+    printf("  Список: время = %f сек, расстояние = %d\n", total_t, distance);
+
+     start_t = clock();
+    distance = shortestPath(start, end, numStops, routes, routeSizes, numRoutes, 3);
+    end_t = clock();
+    total_t = (double)(end_t - start_t) / CLOCKS_PER_SEC;
+    printf("  Std (Имитация): время = %f сек, расстояние = %d\n", total_t, distance);
+
+}
+
+int main() {
+    int numStops = 7;
+    int numRoutes = 4;
+
+    int route1[] = {0, 1, 2};
+    int route2[] = {2, 3, 4};
+    int route3[] = {4, 5, 6};
+    int route4[] = {0, 6};
+
+    int* routes[] = {route1, route2, route3, route4};
+    int routeSizes[] = {3, 3, 3, 2};
+
+    int startStop = 0;
+    int endStop = 4;
+
+    printf("Поиск кратчайшего пути:\n");
+    comparePerformance(startStop, endStop, numStops, routes, routeSizes, numRoutes);
+
+    return 0;
+}
