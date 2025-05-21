@@ -1,0 +1,94 @@
+// Болгов Илья 090304-РПИа-о24
+#include <iostream>
+#include <vector>
+#include <complex>
+#include <random>
+#include <chrono>
+#include <cblas.h>
+
+constexpr int N = 1024;
+constexpr int BLOCK = 64;
+
+using dcomplex = std::complex<double>;
+using Matrix = std::vector<dcomplex>;
+
+void generate_matrix(Matrix& mat) {
+    std::mt19937 rng(std::random_device{}());
+    std::uniform_real_distribution<double> dist(0.0, 1.0);
+
+    for (auto& val : mat) {
+        val = dcomplex(dist(rng), dist(rng));
+    }
+}
+
+void zero_matrix(Matrix& mat) {
+    std::fill(mat.begin(), mat.end(), dcomplex(0.0, 0.0));
+}
+
+// 1. Наивное перемножение
+void naive_mult(const Matrix& A, const Matrix& B, Matrix& C) {
+    for (int i = 0; i < N; ++i)
+        for (int j = 0; j < N; ++j) {
+            dcomplex sum = 0.0;
+            for (int k = 0; k < N; ++k)
+                sum += A[i * N + k] * B[k * N + j];
+            C[i * N + j] = sum;
+        }
+}
+
+// 2. BLAS перемножение
+void blas_mult(const Matrix& A, const Matrix& B, Matrix& C) {
+    dcomplex alpha = 1.0;
+    dcomplex beta = 0.0;
+    cblas_zgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+        N, N, N,
+        &alpha, A.data(), N, B.data(), N, &beta, C.data(), N);
+}
+
+// 3. Оптимизированное блочное перемножение
+void blocked_mult(const Matrix& A, const Matrix& B, Matrix& C) {
+    for (int ii = 0; ii < N; ii += BLOCK)
+        for (int jj = 0; jj < N; jj += BLOCK)
+            for (int kk = 0; kk < N; kk += BLOCK)
+                for (int i = ii; i < ii + BLOCK; ++i)
+                    for (int j = jj; j < jj + BLOCK; ++j) {
+                        dcomplex sum = 0.0;
+                        for (int k = kk; k < kk + BLOCK; ++k)
+                            sum += A[i * N + k] * B[k * N + j];
+                        C[i * N + j] += sum;
+                    }
+}
+
+double benchmark(void(*func)(const Matrix&, const Matrix&, Matrix&),
+    const Matrix& A, const Matrix& B, Matrix& C) {
+    auto start = std::chrono::high_resolution_clock::now();
+    func(A, B, C);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    return elapsed.count();
+}
+
+int main() {
+    Matrix A(N * N), B(N * N), C(N * N);
+    generate_matrix(A);
+    generate_matrix(B);
+
+    const double total_ops = 2.0 * N * N * N;
+
+    // Наивный алгоритм
+    zero_matrix(C);
+    double t1 = benchmark(naive_mult, A, B, C);
+    std::cout << "Naive:    time = " << t1 << " s, MFLOPS = " << total_ops / (t1 * 1e6) << "\n";
+
+    // BLAS
+    zero_matrix(C);
+    double t2 = benchmark(blas_mult, A, B, C);
+    std::cout << "BLAS:     time = " << t2 << " s, MFLOPS = " << total_ops / (t2 * 1e6) << "\n";
+
+    // Блочный алгоритм
+    zero_matrix(C);
+    double t3 = benchmark(blocked_mult, A, B, C);
+    std::cout << "Blocked:  time = " << t3 << " s, MFLOPS = " << total_ops / (t3 * 1e6) << "\n";
+
+    return 0;
+}
